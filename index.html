@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>스타크래프트 팀 대항전 실시간 빙고 시스템</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; margin: 20px; }
+        .controls { background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn { padding: 8px 16px; margin-right: 5px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 4px; font-weight: bold; }
+        .btn.active { background: #007bff; color: white; border-color: #0056b3; }
+        
+        .game-container { display: flex; gap: 30px; align-items: flex-start; }
+        
+        /* 빙고판 스타일 (연승 표기 추가로 인해 너비를 580px로 여유 있게 확장) */
+        .bingo-box { background: white; border: 3px solid #000; border-radius: 4px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+        .bingo-header { background: #5c8ae6; color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 24px; position: relative; }
+        
+        .grid { display: grid; background: #000; gap: 2px; }
+        .cell { background: white; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; aspect-ratio: 1; user-select: none; cursor: pointer; position: relative; }
+        
+        /* 팀 선택기 */
+        .team-selector { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+        .color-circle { width: 25px; height: 25px; border-radius: 50%; cursor: pointer; border: 2px solid #fff; box-shadow: 0 0 3px #000; }
+        .color-circle.selected { border: 2px solid #000; transform: scale(1.2); }
+        
+        /* 권한 제어 바 */
+        .auth-bar { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 14px; display: flex; align-items: center; gap: 15px; }
+        .auth-btn { background: #28a745; color: white; border-color: #218838; }
+        .auth-btn.locked { background: #dc3545; color: white; border-color: #bd2130; }
+        
+        /* 팀전 스코어보드 디자인 */
+        .team-scoreboard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; background: #dce6f2; border-bottom: 2px solid #000; font-weight: bold; font-size: 14px; }
+        .team-score-item { padding: 6px; border-radius: 4px; background: #fff; border: 1px solid #ccc; text-align: center; white-space: nowrap; }
+
+        /* 우측 연승 관리판 스타일 */
+        .streak-container { display: flex; flex-direction: column; }
+        .streak-input-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-weight: bold; font-size: 16px; }
+        .streak-input-row input { width: 65px; padding: 5px; text-align: center; font-size: 16px; font-weight: bold; border: 1px solid #ccc; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h3>⚙️ 빙고 시스템 설정 (팀 대항전 전용)</h3>
+        <button class="btn" id="btn-size-5" onclick="changeSize(5)">5x5</button>
+        <button class="btn" id="btn-size-4" onclick="changeSize(4)">4x4</button>
+        <button class="btn" id="btn-size-3" onclick="changeSize(3)">3x3</button>
+        |
+        <button class="btn" style="background: #ffc107; border-color: #e0a800;" onclick="rerollBoard()">🔄 새판 짜기 (1~30 리롤)</button>
+        
+        <div id="team-picker-area" class="team-selector">
+            <strong>현재 선택 붓 (땅 점령용): </strong>
+            <div class="color-circle selected" id="col-red" style="background:#ff4d4d;" onclick="selectTeam('#ff4d4d', this)"></div>
+            <div class="color-circle" id="col-blue" style="background:#4da6ff;" onclick="selectTeam('#4da6ff', this)"></div>
+            <div class="color-circle" id="col-green" style="background:#5cd65c;" onclick="selectTeam('#5cd65c', this)"></div>
+            <div class="color-circle" id="col-yellow" style="background:#ffeb3b;" onclick="selectTeam('#ffeb3b', this)"></div>
+            <div class="color-circle" id="col-purple" style="background:#9c27b0;" onclick="selectTeam('#9c27b0', this)"></div>
+            <div class="color-circle" id="col-grey" style="background:#9e9e9e;" onclick="selectTeam('#9e9e9e', this)"></div>
+        </div>
+
+        <div class="auth-bar">
+            <strong>🔒 권한 상태: </strong>
+            <span id="auth-status-text" style="color:#dc3545; font-weight:bold;">👁️ 뷰어 모드 (읽기 전용)</span>
+            <button class="btn auth-btn" id="btn-auth-toggle" onclick="toggleAuth()">🔓 편집 권한 획득</button>
+        </div>
+    </div>
+
+    <div class="game-container">
+        <div>
+            <div class="bingo-box" style="width: 580px;">
+                <div class="bingo-header">STARCRAFT TEAM BINGO</div>
+                
+                <div class="team-scoreboard">
+                    <div class="team-score-item" style="color:#ff4d4d;">🔴 빨강: <span id="team-bingo-red">0</span>줄 (<span id="team-streak-red">0</span>연승)</div>
+                    <div class="team-score-item" style="color:#1976d2;">🔵 파랑: <span id="team-bingo-blue">0</span>줄 (<span id="team-streak-blue">0</span>연승)</div>
+                    <div class="team-score-item" style="color:#388e3c;">🟢 초록: <span id="team-bingo-green">0</span>줄 (<span id="team-streak-green">0</span>연승)</div>
+                    <div class="team-score-item" style="color:#b7b700;">🟡 노랑: <span id="team-bingo-yellow">0</span>줄 (<span id="team-streak-yellow">0</span>연승)</div>
+                    <div class="team-score-item" style="color:#7b1fa2;">🟣 보라: <span id="team-bingo-purple">0</span>줄 (<span id="team-streak-purple">0</span>연승)</div>
+                    <div class="team-score-item" style="color:#616161;">⚪ 회색: <span id="team-bingo-grey">0</span>줄 (<span id="team-streak-grey">0</span>연승)</div>
+                </div>
+
+                <div id="grid-team" class="grid"></div>
+            </div>
+        </div>
+
+        <div class="streak-container">
+            <div class="bingo-box" style="padding:15px; width: 220px; background:#fff;">
+                <h4 style="margin-top: 0; margin-bottom: 15px; text-align: center; border-bottom: 2px solid #5c8ae6; padding-bottom: 5px;">🔥 팀별 연승 관리</h4>
+                
+                <div class="streak-input-row">
+                    <span style="color:#ff4d4d;">🔴 빨강 팀</span>
+                    <input type="number" id="streak-input-red" min="0" value="0" disabled>
+                </div>
+                <div class="streak-input-row">
+                    <span style="color:#1976d2;">🔵 파랑 팀</span>
+                    <input type="number" id="streak-input-blue" min="0" value="0" disabled>
+                </div>
+                <div class="streak-input-row">
+                    <span style="color:#388e3c;">🟢 초록 팀</span>
+                    <input type="number" id="streak-input-green" min="0" value="0" disabled>
+                </div>
+                <div class="streak-input-row">
+                    <span style="color:#b7b700;">🟡 노랑 팀</span>
+                    <input type="number" id="streak-input-yellow" min="0" value="0" disabled>
+                </div>
+                <div class="streak-input-row">
+                    <span style="color:#7b1fa2;">🟣 보라 팀</span>
+                    <input type="number" id="streak-input-purple" min="0" value="0" disabled>
+                </div>
+                <div class="streak-input-row">
+                    <span style="color:#616161;">⚪ 회색 팀</span>
+                    <input type="number" id="streak-input-grey" min="0" value="0" disabled>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDZW1TPip1r64IrMO4fJYRBDNq_4jjmTzQ",
+            authDomain: "bingo-2eb17.firebaseapp.com",
+            projectId: "bingo-2eb17",
+            storageBucket: "bingo-2eb17.firebasestorage.app",
+            messagingSenderId: "325803559823",
+            appId: "1:325803559823:web:9eb6d9830072cf76c419fa",
+            databaseURL: "https://bingo-2eb17-default-rtdb.firebaseio.com"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        const roomRef = ref(db, 'bingo_rooms/shared_global_board');
+
+        const TEAM_COLORS = [
+            { id: 'red', hex: '#ff4d4d', text: '#fff' },
+            { id: 'blue', hex: '#4da6ff', text: '#fff' },
+            { id: 'green', hex: '#5cd65c', text: '#000' },
+            { id: 'yellow', hex: '#ffeb3b', text: '#000' },
+            { id: 'purple', hex: '#9c27b0', text: '#fff' },
+            { id: 'grey', hex: '#9e9e9e', text: '#000' }
+        ];
+
+        const ADMIN_PASSWORD = "1324"; 
+        let hasEditPermission = false; 
+        let selectedColor = '#ff4d4d'; 
+        let currentRoomData = null;
+
+        window.toggleAuth = function() {
+            if (hasEditPermission) {
+                hasEditPermission = false;
+                alert("편집 권한이 해제되어 뷰어 모드로 전환됩니다.");
+                updateAuthUI();
+                return;
+            }
+            
+            const pwInput = prompt("수정 권한을 얻으려면 비밀번호를 입력하세요:");
+            if (pwInput === ADMIN_PASSWORD) {
+                hasEditPermission = true;
+                alert("인증 성공! 이제 빙고판 조작 및 연승 수정이 가능합니다.");
+            } else {
+                alert("비밀번호가 일치하지 않습니다.");
+            }
+            updateAuthUI();
+        };
+
+        function updateAuthUI() {
+            const statusText = document.getElementById('auth-status-text');
+            const authBtn = document.getElementById('btn-auth-toggle');
+            if (hasEditPermission) {
+                statusText.textContent = "✍️ 편집자 모드 (수정 가능)";
+                statusText.style.color = "#28a745";
+                authBtn.textContent = "🔒 권한 잠그기";
+                authBtn.className = "btn auth-btn locked";
+            } else {
+                statusText.textContent = "👁️ 뷰어 모드 (읽기 전용)";
+                statusText.style.color = "#dc3545";
+                authBtn.textContent = "🔓 편집 권한 획득";
+                authBtn.className = "btn auth-btn";
+            }
+            TEAM_COLORS.forEach(team => {
+                const input = document.getElementById(`streak-input-${team.id}`);
+                if (input) input.disabled = !hasEditPermission;
+            });
+        }
+
+        function checkPermission() {
+            if (!hasEditPermission) {
+                alert("❌ 권한이 없습니다! 수정하려면 '편집 권한 획득' 버튼을 눌러 비밀번호를 입력하세요.");
+                return false;
+            }
+            return true;
+        }
+
+        function generateRandomNumbers(size) {
+            let arr = [];
+            while(arr.length < size * size) {
+                let r = Math.floor(Math.random() * 30) + 1;
+                if(arr.indexOf(r) === -1) arr.push(r);
+            }
+            return arr;
+        }
+
+        window.changeSize = function(size) {
+            if (!checkPermission()) return;
+            update(roomRef, { size: size });
+            window.rerollBoard(size);
+        };
+
+        window.selectTeam = function(color, element) {
+            selectedColor = color;
+            document.querySelectorAll('.color-circle').forEach(c => c.classList.remove('selected'));
+            element.classList.add('selected');
+        };
+
+        window.rerollBoard = function(forcedSize) {
+            if (currentRoomData && !checkPermission()) return;
+            
+            const size = forcedSize || (currentRoomData ? currentRoomData.size : 5);
+            const numbers = generateRandomNumbers(size);
+            
+            let teamStates = {};
+            for(let i = 0; i < size * size; i++) {
+                teamStates[i] = "";
+            }
+            
+            let streakStates = {};
+            TEAM_COLORS.forEach(t => {
+                streakStates[t.id] = 0;
+            });
+
+            set(roomRef, {
+                size: size,
+                numbers: numbers,
+                teams: teamStates,
+                streaks: streakStates
+            });
+        };
+
+        TEAM_COLORS.forEach(team => {
+            const input = document.getElementById(`streak-input-${team.id}`);
+            if (input) {
+                input.onchange = (e) => {
+                    if (!checkPermission()) {
+                        input.value = (currentRoomData && currentRoomData.streaks && currentRoomData.streaks[team.id] !== undefined) ? currentRoomData.streaks[team.id] : 0;
+                        return;
+                    }
+                    let val = parseInt(e.target.value) || 0;
+                    if (val < 0) val = 0;
+                    set(ref(db, 'bingo_rooms/shared_global_board/streaks/' + team.id), val);
+                };
+            }
+        });
+
+        onValue(roomRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data || !data.numbers) {
+                window.rerollBoard(5);
+                return;
+            }
+            currentRoomData = data;
+            renderBoards(data);
+        });
+
+        function renderBoards(data) {
+            const size = data.size;
+            const numbers = data.numbers;
+            const gridStyle = `repeat(${size}, 1fr)`;
+
+            document.querySelectorAll('.controls .btn').forEach(b => {
+                if(b.textContent.includes('x')) b.classList.remove('active');
+            });
+            const sizeBtn = document.getElementById(`btn-size-${size}`);
+            if(sizeBtn) sizeBtn.classList.add('active');
+
+            const teamGrid = document.getElementById('grid-team');
+            teamGrid.style.gridTemplateColumns = gridStyle;
+            teamGrid.innerHTML = '';
+
+            numbers.forEach((num, idx) => {
+                let cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.textContent = num;
+                
+                const cellColor = data.teams ? data.teams[idx] : "";
+                const matchedTeam = TEAM_COLORS.find(t => t.hex === cellColor);
+                
+                if(matchedTeam) {
+                    cell.style.background = matchedTeam.hex;
+                    cell.style.color = matchedTeam.text;
+                } else {
+                    cell.style.background = '#fff';
+                    cell.style.color = '#000';
+                }
+
+                cell.onclick = () => {
+                    if (!checkPermission()) return;
+                    let nextColor = (cellColor === selectedColor) ? "" : selectedColor;
+                    set(ref(db, 'bingo_rooms/shared_global_board/teams/' + idx), nextColor);
+                };
+                teamGrid.appendChild(cell);
+            });
+
+            // --- 상단 전광판 각 컬러별 정밀 빙고 연산 및 스코어판 표기 ---
+            document.getElementById('team-bingo-red').textContent = calculateBingoLines(data.teams, size, '#ff4d4d');
+            document.getElementById('team-bingo-blue').textContent = calculateBingoLines(data.teams, size, '#4da6ff');
+            document.getElementById('team-bingo-green').textContent = calculateBingoLines(data.teams, size, '#5cd65c');
+            document.getElementById('team-bingo-yellow').textContent = calculateBingoLines(data.teams, size, '#ffeb3b');
+            document.getElementById('team-bingo-purple').textContent = calculateBingoLines(data.teams, size, '#9c27b0');
+            document.getElementById('team-bingo-grey').textContent = calculateBingoLines(data.teams, size, '#9e9e9e');
+
+            // --- 우측 연승 박스 숫자 원격 동기화 및 상단 전광판 연승 연동 ---
+            TEAM_COLORS.forEach((team) => {
+                const input = document.getElementById(`streak-input-${team.id}`);
+                const currentVal = (data.streaks && data.streaks[team.id] !== undefined) ? data.streaks[team.id] : 0;
+                
+                // 우측 컨트롤 입력창 값 동기화
+                if (input && document.activeElement !== input) {
+                    input.value = currentVal;
+                }
+
+                // [추가] 상단 스코어보드 옆에 실시간 연승 텍스트 업데이트
+                const topStreakDisplay = document.getElementById(`team-streak-${team.id}`);
+                if (topStreakDisplay) {
+                    topStreakDisplay.textContent = currentVal;
+                }
+            });
+        }
+
+        function calculateBingoLines(statesObj, size, targetValue) {
+            if(!statesObj) return 0;
+            let count = 0;
+
+            for (let r = 0; r < size; r++) {
+                let rowWin = true;
+                for (let c = 0; c < size; c++) {
+                    if (statesObj[r * size + c] !== targetValue) { rowWin = false; break; }
+                }
+                if (rowWin) count++;
+            }
+
+            for (let c = 0; c < size; c++) {
+                let colWin = true;
+                for (let r = 0; r < size; r++) {
+                    if (statesObj[r * size + c] !== targetValue) { colWin = false; break; }
+                }
+                if (colWin) count++;
+            }
+
+            let diag1Win = true;
+            for (let i = 0; i < size; i++) {
+                if (statesObj[i * size + i] !== targetValue) { diag1Win = false; break; }
+            }
+            if (diag1Win) count++;
+
+            let diag2Win = true;
+            for (let i = 0; i < size; i++) {
+                if (statesObj[i * size + (size - 1 - i)] !== targetValue) { diag2Win = false; break; }
+            }
+            if (diag2Win) count++;
+
+            return count;
+        }
+    </script>
+</body>
+</html>
