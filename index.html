@@ -70,6 +70,7 @@
         <button class="btn" id="btn-size-3" onclick="changeSize(3)">3x3</button>
         |
         <button class="btn" style="background: #ffc107; border-color: #e0a800;" onclick="rerollBoard()">🔄 새판 짜기 (6~30 리롤)</button>
+        <button class="btn" style="background: #6c757d; color: white; border-color: #545b62;" onclick="resetBingo()">🧹 빙고 초기화 (색상/연승 리셋)</button>
         
         <div id="team-picker-area" class="team-selector">
             <strong>현재 선택 붓 (땅 점령용): </strong>
@@ -310,6 +311,35 @@
             });
         };
 
+        // 빙고판 색상 및 연승 초기화 함수 (숫자는 유지)
+        window.resetBingo = function() {
+            if (!currentRoomData) return;
+            if (!checkPermission()) return;
+
+            if (!confirm("현재 빙고판의 모든 색상(점령 상태)과 팀별 연승 점수를 초기화하시겠습니까? (숫자는 유지됩니다.)")) {
+                return;
+            }
+
+            const size = currentRoomData.size || 5;
+            let teamStates = {};
+            for (let i = 0; i < size * size; i++) {
+                teamStates[i] = "";
+            }
+
+            let streakStates = {};
+            TEAM_COLORS.forEach(t => {
+                streakStates[t.id] = 0;
+            });
+
+            // Firebase의 teams와 streaks 노드만 공백 및 0으로 업데이트
+            update(roomRef, {
+                teams: teamStates,
+                streaks: streakStates
+            }).then(() => {
+                showAutoCloseAlert("🧹 빙고판과 연승이 깨끗하게 초기화되었습니다!", "#6c757d");
+            });
+        };
+
         TEAM_COLORS.forEach(team => {
             const input = document.getElementById(`streak-input-${team.id}`);
             if (input) {
@@ -428,7 +458,7 @@
                         input.style.fontSize = '14px';
                         input.style.border = '1px solid #ccc';
                         input.style.borderRadius = '4px';
-                        input.disabled = !hasEditPermission;
+                        input.style.disabled = !hasEditPermission;
                         
                         input.onchange = (e) => {
                             if (!checkPermission()) {
