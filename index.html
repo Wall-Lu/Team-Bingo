@@ -11,7 +11,7 @@
         
         .game-container { display: flex; gap: 30px; align-items: flex-start; }
         
-        /* 빙고판 스타일 (너비는 스크립트에서 동적으로 제어되므로 고정 width 제거) */
+        /* 빙고판 스타일 */
         .bingo-box { background: white; border: 3px solid #000; border-radius: 4px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
         .bingo-header { background: #5c8ae6; color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 24px; position: relative; }
         
@@ -42,6 +42,23 @@
             cursor: pointer;
             margin-right: 4px;
         }
+
+        /* 자동 소멸형 토스트 알림 스타일 추가 */
+        .toast-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            color: white;
+            font-weight: bold;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 9999;
+            font-size: 16px;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            opacity: 0;
+        }
     </style>
 </head>
 <body>
@@ -52,7 +69,7 @@
         <button class="btn" id="btn-size-4" onclick="changeSize(4)">4x4</button>
         <button class="btn" id="btn-size-3" onclick="changeSize(3)">3x3</button>
         |
-        <button class="btn" style="background: #ffc107; border-color: #e0a800;" onclick="rerollBoard()">🔄 새판 짜기 (1~30 리롤)</button>
+        <button class="btn" style="background: #ffc107; border-color: #e0a800;" onclick="rerollBoard()">🔄 새판 짜기 (6~30 리롤)</button>
         
         <div id="team-picker-area" class="team-selector">
             <strong>현재 선택 붓 (땅 점령용): </strong>
@@ -165,10 +182,34 @@
         let selectedColor = '#ff4d4d'; 
         let currentRoomData = null;
 
+        // 3초 뒤 사라지는 알림창 함수 생성
+        function showAutoCloseAlert(message, backgroundColor = '#28a745') {
+            const toast = document.createElement('div');
+            toast.className = 'toast-message';
+            toast.style.backgroundColor = backgroundColor;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            // 강제 리플로우 후 등장 애니메이션 실행
+            setTimeout(() => {
+                toast.style.opacity = '1';
+                toast.style.transform = 'translateY(10px) translateX(-50%)';
+            }, 10);
+
+            // 3초 뒤 사라지기 시작 (0.5초 애니메이션) 후 요소 제거
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(0px) translateX(-50%)';
+                setTimeout(() => {
+                    toast.remove();
+                }, 500);
+            }, 3000);
+        }
+
         window.toggleAuth = function() {
             if (hasEditPermission) {
                 hasEditPermission = false;
-                alert("편집 권한이 해제되어 뷰어 모드로 전환됩니다.");
+                showAutoCloseAlert("편집 권한이 해제되어 뷰어 모드로 전환됩니다.", "#17a2b8");
                 updateAuthUI();
                 return;
             }
@@ -176,8 +217,9 @@
             const pwInput = prompt("수정 권한을 얻으려면 비밀번호를 입력하세요:");
             if (pwInput === ADMIN_PASSWORD) {
                 hasEditPermission = true;
-                alert("인증 성공! 이제 빙고판 조작 및 연승 수정이 가능합니다.");
-            } else {
+                // 기존의 alert() 대신 3초 후 자동 소멸하는 창 적용
+                showAutoCloseAlert("인증 성공! 이제 빙고판 조작 및 연승 수정이 가능합니다.", "#28a745");
+            } else if (pwInput !== null) {
                 alert("비밀번호가 일치하지 않습니다.");
             }
             updateAuthUI();
@@ -206,7 +248,6 @@
                 input.disabled = !hasEditPermission;
             });
 
-            // [추가] 레이아웃 조절 인풋창 권한 상태 연동
             document.getElementById('input-board-width').disabled = !hasEditPermission;
             document.getElementById('input-font-size').disabled = !hasEditPermission;
         }
@@ -222,7 +263,7 @@
         function generateRandomNumbers(size) {
             let arr = [];
             while(arr.length < size * size) {
-                let r = Math.floor(Math.random() * 30) + 1;
+                let r = Math.floor(Math.random() * 25) + 6;
                 if(arr.indexOf(r) === -1) arr.push(r);
             }
             return arr;
@@ -256,7 +297,6 @@
                 streakStates[t.id] = 0;
             });
 
-            // [추가] 새판을 짤 때 기존에 설정해둔 레이아웃 수치 보존
             const boardWidth = currentRoomData ? (currentRoomData.boardWidth || 580) : 580;
             const fontSize = currentRoomData ? (currentRoomData.fontSize || 24) : 24;
 
@@ -285,7 +325,6 @@
             }
         });
 
-        // [추가] 너비 및 글자 크기 인풋 바인딩
         document.getElementById('input-board-width').onchange = (e) => {
             if (!checkPermission()) {
                 e.target.value = (currentRoomData && currentRoomData.boardWidth) ? currentRoomData.boardWidth : 580;
@@ -321,17 +360,14 @@
             const numbers = data.numbers;
             const gridStyle = `repeat(${size}, 1fr)`;
 
-            // [추가] 리얼타임 데이터베이스에서 레이아웃 수치 가져오기 (없으면 기본값)
             const boardWidth = data.boardWidth || 580;
             const fontSize = data.fontSize || 24;
 
-            // [추가] 메인 표 전체 너비 스타일 실시간 동기화 반영
             const bingoBox = document.getElementById('main-bingo-box');
             if (bingoBox) {
                 bingoBox.style.width = boardWidth + 'px';
             }
 
-            // [추가] 조절 창 인풋 값 동기화 (단, 현재 타이핑 중일 땐 방해되지 않게 포커스 상태 검사)
             const widthInput = document.getElementById('input-board-width');
             const fontInput = document.getElementById('input-font-size');
             if (widthInput && document.activeElement !== widthInput) widthInput.value = boardWidth;
@@ -352,7 +388,6 @@
                 cell.className = 'cell';
                 cell.textContent = num;
                 
-                // [추가] 각 셀 내부의 실시간 글자 크기 스타일 반영
                 cell.style.fontSize = fontSize + 'px';
                 
                 const cellColor = data.teams ? data.teams[idx] : "";
