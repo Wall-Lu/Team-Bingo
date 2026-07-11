@@ -11,12 +11,12 @@
         
         .game-container { display: flex; gap: 30px; align-items: flex-start; }
         
-        /* 빙고판 스타일 (연승 표기 추가로 인해 너비를 580px로 여유 있게 확장) */
+        /* 빙고판 스타일 (너비는 스크립트에서 동적으로 제어되므로 고정 width 제거) */
         .bingo-box { background: white; border: 3px solid #000; border-radius: 4px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
         .bingo-header { background: #5c8ae6; color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 24px; position: relative; }
         
         .grid { display: grid; background: #000; gap: 2px; }
-        .cell { background: white; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; aspect-ratio: 1; user-select: none; cursor: pointer; position: relative; }
+        .cell { background: white; display: flex; justify-content: center; align-items: center; font-weight: bold; aspect-ratio: 1; user-select: none; cursor: pointer; position: relative; }
         
         /* 팀 선택기 */
         .team-selector { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
@@ -37,7 +37,6 @@
         .streak-input-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-weight: bold; font-size: 16px; }
         .streak-input-row input { width: 75px; padding: 6px 5px; text-align: center; font-size: 16px; font-weight: bold; border: 1px solid #ccc; border-radius: 4px; }
         
-        /* [변경] 연승 관리 상하 화살표 크기 확대 조절 */
         .streak-input-row input[type="number"]::-webkit-inner-spin-button {
             transform: scale(1.5);
             cursor: pointer;
@@ -70,11 +69,17 @@
             <span id="auth-status-text" style="color:#dc3545; font-weight:bold;">👁️ 뷰어 모드 (읽기 전용)</span>
             <button class="btn auth-btn" id="btn-auth-toggle" onclick="toggleAuth()">🔓 편집 권한 획득</button>
         </div>
+
+        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 14px; display: flex; align-items: center; gap: 20px;">
+            <strong>🎨 레이아웃 크기 설정 (편집자용): </strong>
+            <label style="font-weight: bold;">표 전체 너비: <input type="number" id="input-board-width" min="300" max="1200" step="10" value="580" disabled style="width: 75px; padding: 4px; text-align: center; font-weight: bold;"> px</label>
+            <label style="font-weight: bold;">숫자 글자 크기: <input type="number" id="input-font-size" min="10" max="80" step="1" value="24" disabled style="width: 65px; padding: 4px; text-align: center; font-weight: bold;"> px</label>
+        </div>
     </div>
 
     <div class="game-container">
         <div>
-            <div class="bingo-box" style="width: 580px;">
+            <div class="bingo-box" id="main-bingo-box">
                 <div class="bingo-header">STARCRAFT TEAM BINGO</div>
                 
                 <div class="team-scoreboard">
@@ -196,11 +201,14 @@
                 const input = document.getElementById(`streak-input-${team.id}`);
                 if (input) input.disabled = !hasEditPermission;
             });
-            // [추가] 새로 생긴 숫자 입력 인풋창들도 편집 권한 상태 연동
             const manualInputs = document.querySelectorAll('.num-edit-input');
             manualInputs.forEach(input => {
                 input.disabled = !hasEditPermission;
             });
+
+            // [추가] 레이아웃 조절 인풋창 권한 상태 연동
+            document.getElementById('input-board-width').disabled = !hasEditPermission;
+            document.getElementById('input-font-size').disabled = !hasEditPermission;
         }
 
         function checkPermission() {
@@ -248,11 +256,17 @@
                 streakStates[t.id] = 0;
             });
 
+            // [추가] 새판을 짤 때 기존에 설정해둔 레이아웃 수치 보존
+            const boardWidth = currentRoomData ? (currentRoomData.boardWidth || 580) : 580;
+            const fontSize = currentRoomData ? (currentRoomData.fontSize || 24) : 24;
+
             set(roomRef, {
                 size: size,
                 numbers: numbers,
                 teams: teamStates,
-                streaks: streakStates
+                streaks: streakStates,
+                boardWidth: boardWidth,
+                fontSize: fontSize
             });
         };
 
@@ -271,6 +285,27 @@
             }
         });
 
+        // [추가] 너비 및 글자 크기 인풋 바인딩
+        document.getElementById('input-board-width').onchange = (e) => {
+            if (!checkPermission()) {
+                e.target.value = (currentRoomData && currentRoomData.boardWidth) ? currentRoomData.boardWidth : 580;
+                return;
+            }
+            let val = parseInt(e.target.value) || 580;
+            if (val < 300) val = 300;
+            update(roomRef, { boardWidth: val });
+        };
+
+        document.getElementById('input-font-size').onchange = (e) => {
+            if (!checkPermission()) {
+                e.target.value = (currentRoomData && currentRoomData.fontSize) ? currentRoomData.fontSize : 24;
+                return;
+            }
+            let val = parseInt(e.target.value) || 24;
+            if (val < 10) val = 10;
+            update(roomRef, { fontSize: val });
+        };
+
         onValue(roomRef, (snapshot) => {
             const data = snapshot.val();
             if (!data || !data.numbers) {
@@ -286,6 +321,22 @@
             const numbers = data.numbers;
             const gridStyle = `repeat(${size}, 1fr)`;
 
+            // [추가] 리얼타임 데이터베이스에서 레이아웃 수치 가져오기 (없으면 기본값)
+            const boardWidth = data.boardWidth || 580;
+            const fontSize = data.fontSize || 24;
+
+            // [추가] 메인 표 전체 너비 스타일 실시간 동기화 반영
+            const bingoBox = document.getElementById('main-bingo-box');
+            if (bingoBox) {
+                bingoBox.style.width = boardWidth + 'px';
+            }
+
+            // [추가] 조절 창 인풋 값 동기화 (단, 현재 타이핑 중일 땐 방해되지 않게 포커스 상태 검사)
+            const widthInput = document.getElementById('input-board-width');
+            const fontInput = document.getElementById('input-font-size');
+            if (widthInput && document.activeElement !== widthInput) widthInput.value = boardWidth;
+            if (fontInput && document.activeElement !== fontInput) fontInput.value = fontSize;
+
             document.querySelectorAll('.controls .btn').forEach(b => {
                 if(b.textContent.includes('x')) b.classList.remove('active');
             });
@@ -300,6 +351,9 @@
                 let cell = document.createElement('div');
                 cell.className = 'cell';
                 cell.textContent = num;
+                
+                // [추가] 각 셀 내부의 실시간 글자 크기 스타일 반영
+                cell.style.fontSize = fontSize + 'px';
                 
                 const cellColor = data.teams ? data.teams[idx] : "";
                 const matchedTeam = TEAM_COLORS.find(t => t.hex === cellColor);
@@ -320,12 +374,10 @@
                 teamGrid.appendChild(cell);
             });
 
-            // --- [추가] 우측 빙고 칸 숫자 수동 설정 표 동기화 및 생성 ---
             const numEditGrid = document.getElementById('number-edit-grid');
             if (numEditGrid) {
                 numEditGrid.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
                 
-                // 크기가 바뀐 경우에만 인풋 엘리먼트들을 새로 생성
                 if (numEditGrid.children.length !== numbers.length) {
                     numEditGrid.innerHTML = '';
                     numbers.forEach((num, idx) => {
@@ -354,7 +406,6 @@
                         numEditGrid.appendChild(input);
                     });
                 } else {
-                    // 크기가 같을 때는 포커싱(입력 중)되지 않은 인풋창의 값만 동기화하여 끊김 방지
                     Array.from(numEditGrid.children).forEach((input, idx) => {
                         input.disabled = !hasEditPermission;
                         if (document.activeElement !== input) {
@@ -364,7 +415,6 @@
                 }
             }
 
-            // --- 상단 전광판 각 컬러별 정밀 빙고 연산 및 스코어판 표기 ---
             document.getElementById('team-bingo-red').textContent = calculateBingoLines(data.teams, size, '#ff4d4d');
             document.getElementById('team-bingo-blue').textContent = calculateBingoLines(data.teams, size, '#4da6ff');
             document.getElementById('team-bingo-green').textContent = calculateBingoLines(data.teams, size, '#5cd65c');
@@ -372,17 +422,14 @@
             document.getElementById('team-bingo-purple').textContent = calculateBingoLines(data.teams, size, '#9c27b0');
             document.getElementById('team-bingo-grey').textContent = calculateBingoLines(data.teams, size, '#9e9e9e');
 
-            // --- 우측 연승 박스 숫자 원격 동기화 및 상단 전광판 연승 연동 ---
             TEAM_COLORS.forEach((team) => {
                 const input = document.getElementById(`streak-input-${team.id}`);
                 const currentVal = (data.streaks && data.streaks[team.id] !== undefined) ? data.streaks[team.id] : 0;
                 
-                // 우측 컨트롤 입력창 값 동기화
                 if (input && document.activeElement !== input) {
                     input.value = currentVal;
                 }
 
-                // 상단 스코어보드 옆에 실시간 연승 텍스트 업데이트
                 const topStreakDisplay = document.getElementById(`team-streak-${team.id}`);
                 if (topStreakDisplay) {
                     topStreakDisplay.textContent = currentVal;
