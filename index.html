@@ -33,9 +33,16 @@
         .team-score-item { padding: 6px; border-radius: 4px; background: #fff; border: 1px solid #ccc; text-align: center; white-space: nowrap; }
 
         /* 우측 연승 관리판 스타일 */
-        .streak-container { display: flex; flex-direction: column; }
+        .streak-container { display: flex; flex-direction: column; gap: 15px; }
         .streak-input-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-weight: bold; font-size: 16px; }
-        .streak-input-row input { width: 65px; padding: 5px; text-align: center; font-size: 16px; font-weight: bold; border: 1px solid #ccc; border-radius: 4px; }
+        .streak-input-row input { width: 75px; padding: 6px 5px; text-align: center; font-size: 16px; font-weight: bold; border: 1px solid #ccc; border-radius: 4px; }
+        
+        /* [변경] 연승 관리 상하 화살표 크기 확대 조절 */
+        .streak-input-row input[type="number"]::-webkit-inner-spin-button {
+            transform: scale(1.5);
+            cursor: pointer;
+            margin-right: 4px;
+        }
     </style>
 </head>
 <body>
@@ -112,6 +119,11 @@
                     <input type="number" id="streak-input-grey" min="0" value="0" disabled>
                 </div>
             </div>
+
+            <div class="bingo-box" style="padding:15px; width: 220px; background:#fff;">
+                <h4 style="margin-top: 0; margin-bottom: 15px; text-align: center; border-bottom: 2px solid #5c8ae6; padding-bottom: 5px;">🔢 빙고 칸 숫자 수정</h4>
+                <div id="number-edit-grid" style="display: grid; gap: 5px;"></div>
+            </div>
         </div>
     </div>
 
@@ -183,6 +195,11 @@
             TEAM_COLORS.forEach(team => {
                 const input = document.getElementById(`streak-input-${team.id}`);
                 if (input) input.disabled = !hasEditPermission;
+            });
+            // [추가] 새로 생긴 숫자 입력 인풋창들도 편집 권한 상태 연동
+            const manualInputs = document.querySelectorAll('.num-edit-input');
+            manualInputs.forEach(input => {
+                input.disabled = !hasEditPermission;
             });
         }
 
@@ -303,6 +320,50 @@
                 teamGrid.appendChild(cell);
             });
 
+            // --- [추가] 우측 빙고 칸 숫자 수동 설정 표 동기화 및 생성 ---
+            const numEditGrid = document.getElementById('number-edit-grid');
+            if (numEditGrid) {
+                numEditGrid.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+                
+                // 크기가 바뀐 경우에만 인풋 엘리먼트들을 새로 생성
+                if (numEditGrid.children.length !== numbers.length) {
+                    numEditGrid.innerHTML = '';
+                    numbers.forEach((num, idx) => {
+                        let input = document.createElement('input');
+                        input.type = 'number';
+                        input.className = 'num-edit-input';
+                        input.value = num;
+                        input.style.width = '100%';
+                        input.style.boxSizing = 'border-box';
+                        input.style.padding = '5px 2px';
+                        input.style.textAlign = 'center';
+                        input.style.fontWeight = 'bold';
+                        input.style.fontSize = '14px';
+                        input.style.border = '1px solid #ccc';
+                        input.style.borderRadius = '4px';
+                        input.disabled = !hasEditPermission;
+                        
+                        input.onchange = (e) => {
+                            if (!checkPermission()) {
+                                input.value = currentRoomData.numbers[idx];
+                                return;
+                            }
+                            let val = parseInt(e.target.value) || 0;
+                            set(ref(db, `bingo_rooms/shared_global_board/numbers/${idx}`), val);
+                        };
+                        numEditGrid.appendChild(input);
+                    });
+                } else {
+                    // 크기가 같을 때는 포커싱(입력 중)되지 않은 인풋창의 값만 동기화하여 끊김 방지
+                    Array.from(numEditGrid.children).forEach((input, idx) => {
+                        input.disabled = !hasEditPermission;
+                        if (document.activeElement !== input) {
+                            input.value = numbers[idx];
+                        }
+                    });
+                }
+            }
+
             // --- 상단 전광판 각 컬러별 정밀 빙고 연산 및 스코어판 표기 ---
             document.getElementById('team-bingo-red').textContent = calculateBingoLines(data.teams, size, '#ff4d4d');
             document.getElementById('team-bingo-blue').textContent = calculateBingoLines(data.teams, size, '#4da6ff');
@@ -321,7 +382,7 @@
                     input.value = currentVal;
                 }
 
-                // [추가] 상단 스코어보드 옆에 실시간 연승 텍스트 업데이트
+                // 상단 스코어보드 옆에 실시간 연승 텍스트 업데이트
                 const topStreakDisplay = document.getElementById(`team-streak-${team.id}`);
                 if (topStreakDisplay) {
                     topStreakDisplay.textContent = currentVal;
