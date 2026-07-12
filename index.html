@@ -97,7 +97,8 @@
         <div class="auth-bar">
             <strong>🔒 권한 상태: </strong>
             <span id="auth-status-text" style="color:#dc3545; font-weight:bold;">👁️ 뷰어 모드 (읽기 전용)</span>
-            <button class="btn auth-btn" id="btn-auth-toggle" onclick="toggleAuth()">🔓 편집 권한 획득</button>
+            <!-- 1번 수정사항: 버튼 문구 변경 -->
+            <button class="btn auth-btn" id="btn-auth-toggle" onclick="toggleAuth()">🔓 비밀번호 입력</button>
         </div>
 
         <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 14px; display: flex; align-items: center; gap: 20px;">
@@ -168,10 +169,10 @@
         </div>
     </div>
 
-    <!-- 1번 수정사항: 시청자 노출 방지용 비밀번호 입력 커스텀 모달 -->
+    <!-- 1번 수정사항: 모달 창 헤더 문구 변경 -->
     <div id="password-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;">
         <div style="background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; width: 300px;">
-            <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 18px;">🔒 편집 권한 인증</h4>
+            <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 18px;">🔓 비밀번호 입력</h4>
             <p style="font-size: 14px; color: #666; margin-bottom: 15px;">비밀번호를 입력하세요.</p>
             <input type="password" id="modal-pw-input" onkeydown="if(event.key === 'Enter') window.submitPassword()" style="width: 100%; padding: 10px; box-sizing: border-box; margin-bottom: 20px; text-align: center; font-size: 18px; font-weight: bold; border: 1px solid #ccc; border-radius: 4px; letter-spacing: 4px;">
             <div style="display: flex; gap: 10px; justify-content: center;">
@@ -240,7 +241,6 @@
             }, 3000);
         }
 
-        // 1번 수정사항: prompt 제거 후 모달 토글식으로 변경
         window.toggleAuth = function() {
             if (hasEditPermission) {
                 hasEditPermission = false;
@@ -282,18 +282,19 @@
             updateAuthUI();
         };
 
+        // 1번 및 2번 수정사항: 상태 변화에 따른 버튼 및 상태 문구 변경 동적 반영
         function updateAuthUI() {
             const statusText = document.getElementById('auth-status-text');
             const authBtn = document.getElementById('btn-auth-toggle');
             if (hasEditPermission) {
                 statusText.textContent = "✍️ 편집자 모드 (수정 가능)";
                 statusText.style.color = "#28a745";
-                authBtn.textContent = "🔒 권한 잠그기";
+                authBtn.textContent = "🔓 로그아웃"; // 기존 "🔒 권한 잠그기"에서 수정
                 authBtn.className = "btn auth-btn locked";
             } else {
                 statusText.textContent = "👁️ 뷰어 모드 (읽기 전용)";
                 statusText.style.color = "#dc3545";
-                authBtn.textContent = "🔓 편집 권한 획득";
+                authBtn.textContent = "🔓 비밀번호 입력"; // 기존 "🔓 편집 권한 획득"에서 수정
                 authBtn.className = "btn auth-btn";
             }
             TEAM_COLORS.forEach(team => {
@@ -313,7 +314,7 @@
 
         function checkPermission() {
             if (!hasEditPermission) {
-                alert("❌ 권한이 없습니다! 수정하려면 '편집 권한 획득' 버튼을 눌러 비밀번호를 입력하세요.");
+                alert("❌ 권한이 없습니다! 수정하려면 '🔓 비밀번호 입력' 버튼을 눌러 비밀번호를 입력하세요.");
                 return false;
             }
             return true;
@@ -653,7 +654,6 @@
                         input.style.height = '34px';
                         input.disabled = !hasEditPermission;
                         
-                        // 2번 수정사항: 클릭(포커스) 시 텍스트 전체 선택 기능 추가
                         input.onfocus = (e) => {
                             e.target.select();
                         };
